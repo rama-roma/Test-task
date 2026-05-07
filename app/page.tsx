@@ -1,6 +1,30 @@
 "use client";
 
 import { useState } from "react";
+import {
+  Button,
+  Input,
+  Table,
+  Modal,
+  Card,
+  Space,
+  message,
+  Form,
+  Empty,
+  Popconfirm,
+  Tag,
+  Layout,
+} from "antd";
+import {
+  PlusOutlined,
+  EditOutlined,
+  DeleteOutlined,
+  SaveOutlined,
+  PhoneOutlined,
+  UserOutlined,
+} from "@ant-design/icons";
+import type { ColumnsType } from "antd/es/table";
+import { useMediaQuery } from "react-responsive";
 
 interface Client {
   id: number;
@@ -13,38 +37,48 @@ export default function Home() {
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [editingId, setEditingId] = useState<number | null>(null);
+  const [isModalVisible, setIsModalVisible] = useState(false);
+
+  const isMobile = useMediaQuery({ maxWidth: 768 });
+
+  const validateName = (value: string): boolean => {
+    if (!value.trim()) {
+      message.error("Заполни имя!");
+      return false;
+    }
+    if (!/^[a-яёА-ЯЁa-zA-Z\s\-]+$/.test(value)) {
+      message.error("Имя может содержать только буквы, пробелы и дефисы!");
+      return false;
+    }
+    return true;
+  };
+
+  const validatePhone = (value: string): boolean => {
+    if (!value.trim()) {
+      message.error("Заполни телефон!");
+      return false;
+    }
+    if (!/^[\d\+\-\s()]+$/.test(value)) {
+      message.error(
+        "Телефон должен содержать только цифры и символы: +, -, ( ), пробелы!"
+      );
+      return false;
+    }
+    return true;
+  };
 
   const addClient = () => {
-    // ПРОВЕРКА ИМЕНИ (только буквы, пробелы, дефисы)
-    if (!name.trim()) {
-      alert("Заполни имя!");
-      return;
-    }
-
-    if (!/^[a-яёА-ЯЁa-zA-Z\s\-]+$/.test(name)) {
-      alert("Имя может содержать только буквы, пробелы и дефисы!");
-      return;
-    }
-
-    // ПРОВЕРКА ТЕЛЕФОНА (только цифры, +, пробелы, дефисы, скобки)
-    if (!phone.trim()) {
-      alert("Заполни телефон!");
-      return;
-    }
-
-    if (!/^[\d\+\-\s()]+$/.test(phone)) {
-      alert(
-        "Телефон должен содержать только цифры и символы: +, -, ( ), пробелы!",
-      );
+    if (!validateName(name) || !validatePhone(phone)) {
       return;
     }
 
     if (editingId) {
       setClients(
         clients.map((client) =>
-          client.id === editingId ? { ...client, name, phone } : client,
-        ),
+          client.id === editingId ? { ...client, name, phone } : client
+        )
       );
+      message.success("Клиент обновлён!");
       setEditingId(null);
     } else {
       const newClient: Client = {
@@ -53,231 +87,251 @@ export default function Home() {
         phone,
       };
       setClients([...clients, newClient]);
+      message.success("Клиент добавлен!");
     }
 
     setName("");
     setPhone("");
-  };
-  const deleteClient = (id: number) => {
-    setClients(clients.filter((client) => client.id !== id));
+    setIsModalVisible(false);
   };
 
   const editClient = (client: Client) => {
     setName(client.name);
     setPhone(client.phone);
     setEditingId(client.id);
+    setIsModalVisible(true);
+  };
+
+  const deleteClient = (id: number) => {
+    setClients(clients.filter((client) => client.id !== id));
+    message.success("Клиент удалён!");
   };
 
   const cancelEdit = () => {
     setName("");
     setPhone("");
     setEditingId(null);
+    setIsModalVisible(false);
   };
 
-  return (
-    <div
-      style={{
-        maxWidth: "600px",
-        margin: "0 auto",
-        padding: "20px",
-        fontFamily: "Arial",
-      }}
-    >
-      <h1>📱 Мини CRM</h1>
-
-      {/* ФОРМА */}
-      <div
-        style={{
-          background: "#f5f5f5",
-          padding: "20px",
-          borderRadius: "8px",
-          marginBottom: "20px",
-        }}
-      >
-        <h2>{editingId ? "✏️ Редактировать клиента" : "Добавить клиента"}</h2>
-
-        <input
-          type="text"
-          placeholder="Имя"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          onKeyPress={(e) => e.key === "Enter" && addClient()}
-          style={{
-            display: "block",
-            width: "100%",
-            padding: "10px",
-            marginBottom: "10px",
-            fontSize: "16px",
-            borderRadius: "4px",
-            border: "1px solid #ddd",
-          }}
-        />
-
-        <input
-          type="tel"
-          placeholder="Телефон"
-          value={phone}
-          onChange={(e) => setPhone(e.target.value)}
-          onKeyPress={(e) => e.key === "Enter" && addClient()}
-          style={{
-            display: "block",
-            width: "100%",
-            padding: "10px",
-            marginBottom: "10px",
-            fontSize: "16px",
-            borderRadius: "4px",
-            border: "1px solid #ddd",
-          }}
-        />
-
-        <div style={{ display: "flex", gap: "10px" }}>
-          <button
-            onClick={addClient}
-            style={{
-              background: editingId ? "#28a745" : "#0052CC",
-              color: "white",
-              padding: "10px 20px",
-              border: "none",
-              borderRadius: "4px",
-              cursor: "pointer",
-              fontSize: "16px",
-              fontWeight: "bold",
-              flex: 1,
-            }}
+  // ДЕСКТОП ВЕРСИЯ
+  const desktopColumns: ColumnsType<Client & { index: number }> = [
+    {
+      title: "№",
+      dataIndex: "index",
+      key: "index",
+      width: "5%",
+      align: "center",
+      render: (_, __, index) => <Tag color="blue">{index + 1}</Tag>,
+    },
+    {
+      title: "Имя",
+      dataIndex: "name",
+      key: "name",
+      width: "35%",
+      render: (text) => (
+        <Space>
+          <UserOutlined style={{ color: "#1890ff" }} />
+          <span style={{ fontSize: "16px", fontWeight: "500" }}>{text}</span>
+        </Space>
+      ),
+    },
+    {
+      title: "Телефон",
+      dataIndex: "phone",
+      key: "phone",
+      width: "35%",
+      render: (text) => (
+        <Space>
+          <PhoneOutlined style={{ color: "#52c41a", fontSize: "18px" }} />
+          <span style={{ fontSize: "16px", fontWeight: "500" }}>{text}</span>
+        </Space>
+      ),
+    },
+    {
+      title: "Действия",
+      key: "actions",
+      width: "25%",
+      render: (_, record) => (
+        <Space>
+          <Button
+            type="primary"
+            icon={<EditOutlined />}
+            size="middle"
+            onClick={() => editClient(record)}
           >
-            {editingId ? "💾 Сохранить" : "➕ Добавить клиента"}
-          </button>
+            Изменить
+          </Button>
+          <Popconfirm
+            title="Удалить клиента?"
+            description="Вы уверены что хотите удалить этого клиента?"
+            onConfirm={() => deleteClient(record.id)}
+            okText="Да"
+            cancelText="Отмена"
+          >
+            <Button type="primary" danger icon={<DeleteOutlined />} size="middle">
+              Удалить
+            </Button>
+          </Popconfirm>
+        </Space>
+      ),
+    },
+  ];
 
-          {editingId && (
-            <button
-              onClick={cancelEdit}
-              style={{
-                background: "#6c757d",
-                color: "white",
-                padding: "10px 20px",
-                border: "none",
-                borderRadius: "4px",
-                cursor: "pointer",
-                fontSize: "16px",
-                fontWeight: "bold",
-                flex: 1,
+  // МОБИЛЬНАЯ ВЕРСИЯ
+  const mobileColumns: ColumnsType<Client & { index: number }> = [
+    {
+      title: "Имя",
+      dataIndex: "name",
+      key: "name",
+      render: (text, record) => (
+        <div>
+          <div style={{ fontSize: "14px", fontWeight: "bold" }}>{text}</div>
+          <div style={{ fontSize: "12px", color: "#999" }}>{record.phone}</div>
+        </div>
+      ),
+    },
+    {
+      title: "Действия",
+      key: "actions",
+      width: "30%",
+      render: (_, record) => (
+        <Space direction="vertical" size="small">
+          <Button
+            type="primary"
+            icon={<EditOutlined />}
+            size="small"
+            block
+            onClick={() => editClient(record)}
+          >
+            Изменить
+          </Button>
+          <Popconfirm
+            title="Удалить?"
+            onConfirm={() => deleteClient(record.id)}
+            okText="Да"
+            cancelText="Отмена"
+          >
+            <Button type="primary" danger icon={<DeleteOutlined />} size="small" block>
+              Удалить
+            </Button>
+          </Popconfirm>
+        </Space>
+      ),
+    },
+  ];
+
+  const dataWithIndex = clients.map((client, index) => ({
+    ...client,
+    index,
+  }));
+
+  return (
+    <Layout style={{ minHeight: "100vh", background: "#f5f5f5" }}>
+      <Layout.Content style={{ padding: isMobile ? "16px" : "32px" }}>
+        <Card
+          title={
+            <div style={{ fontSize: isMobile ? "18px" : "24px", fontWeight: "bold" }}>
+              CRM Система
+            </div>
+          }
+          extra={
+            <Button
+              type="primary"
+              icon={<PlusOutlined />}
+              size={isMobile ? "middle" : "large"}
+              onClick={() => {
+                setEditingId(null);
+                setName("");
+                setPhone("");
+                setIsModalVisible(true);
               }}
             >
-              ✖️ Отмена
-            </button>
+              {isMobile ? "Добавить" : "Добавить клиента"}
+            </Button>
+          }
+          style={{
+            boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
+            borderRadius: "8px",
+          }}
+        >
+          {clients.length === 0 ? (
+            <Empty description="Нет клиентов" style={{ padding: "40px 0" }} />
+          ) : (
+            <div>
+              <div style={{ marginBottom: "16px", color: "#666" }}>
+                <strong>Всего клиентов: {clients.length}</strong>
+              </div>
+              <Table
+                columns={isMobile ? mobileColumns : desktopColumns}
+                dataSource={dataWithIndex}
+                rowKey="id"
+                pagination={false}
+                size={isMobile ? "small" : "large"}
+                scroll={isMobile ? { x: true } : undefined}
+                rowClassName={(_, index) =>
+                  index % 2 === 0 ? "even-row" : "odd-row"
+                }
+              />
+            </div>
           )}
-        </div>
-      </div>
+        </Card>
+      </Layout.Content>
 
-      {/* СПИСОК КЛИЕНТОВ */}
-      <div>
-        <h2>Список клиентов ({clients.length})</h2>
-
-        {clients.length === 0 ? (
-          <p style={{ color: "#999", textAlign: "center", padding: "20px" }}>
-            Нет клиентов. Добавьте первого!
-          </p>
-        ) : (
-          <table
-            style={{
-              width: "100%",
-              borderCollapse: "collapse",
-              background: "white",
-              boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
-            }}
+      {/* МОДАЛ ДЛЯ ДОБАВЛЕНИЯ/РЕДАКТИРОВАНИЯ */}
+      <Modal
+        title={editingId ? "Редактировать клиента" : "Добавить клиента"}
+        open={isModalVisible}
+        onCancel={cancelEdit}
+        width={isMobile ? "95%" : 500}
+        footer={[
+          <Button key="cancel" size="large" onClick={cancelEdit}>
+            Отмена
+          </Button>,
+          <Button
+            key="submit"
+            type="primary"
+            size="large"
+            onClick={addClient}
+            icon={editingId ? <SaveOutlined /> : <PlusOutlined />}
           >
-            <thead>
-              <tr style={{ background: "#e8e8e8" }}>
-                <th
-                  style={{
-                    padding: "12px",
-                    textAlign: "left",
-                    border: "1px solid #ddd",
-                  }}
-                >
-                  Имя
-                </th>
-                <th
-                  style={{
-                    padding: "12px",
-                    textAlign: "left",
-                    border: "1px solid #ddd",
-                  }}
-                >
-                  Телефон
-                </th>
-                <th
-                  style={{
-                    padding: "12px",
-                    textAlign: "center",
-                    border: "1px solid #ddd",
-                    width: "150px",
-                  }}
-                >
-                  Действия
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {clients.map((client) => (
-                <tr
-                  key={client.id}
-                  style={{
-                    borderBottom: "1px solid #ddd",
-                    background: editingId === client.id ? "#fff3cd" : "white",
-                  }}
-                >
-                  <td style={{ padding: "12px", border: "1px solid #ddd" }}>
-                    {client.name}
-                  </td>
-                  <td style={{ padding: "12px", border: "1px solid #ddd" }}>
-                    {client.phone}
-                  </td>
-                  <td
-                    style={{
-                      padding: "12px",
-                      textAlign: "center",
-                      border: "1px solid #ddd",
-                    }}
-                  >
-                    <div className="flex ">
-                      <button
-                        onClick={() => editClient(client)}
-                        style={{
-                          background: "#ffc107",
-                          color: "#000",
-                          border: "none",
-                          padding: "6px 10px",
-                          borderRadius: "4px",
-                          cursor: "pointer",
-                          fontSize: "14px",
-                          marginRight: "5px",
-                        }}
-                      >
-                        ✏️ Изменить
-                      </button>
-                      <button
-                        onClick={() => deleteClient(client.id)}
-                        style={{
-                          background: "#ff4444",
-                          color: "white",
-                          border: "none",
-                          padding: "6px 10px",
-                          borderRadius: "4px",
-                          cursor: "pointer",
-                          fontSize: "14px",
-                        }}
-                      >
-                        🗑️ Удалить
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
-    </div>
+            {editingId ? "Сохранить" : "Добавить"}
+          </Button>,
+        ]}
+      >
+        <Form layout="vertical" style={{ marginTop: "20px" }}>
+          <Form.Item label="Имя" required>
+            <Input
+              placeholder="Введите имя"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              onKeyPress={(e) => e.key === "Enter" && addClient()}
+              size="large"
+              prefix={<UserOutlined />}
+            />
+          </Form.Item>
+
+          <Form.Item label="Телефон" required>
+            <Input
+              placeholder="Введите телефон"
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              onKeyPress={(e) => e.key === "Enter" && addClient()}
+              size="large"
+              prefix={<PhoneOutlined />}
+            />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <style>{`
+        .even-row {
+          background-color: #fafafa;
+        }
+        .odd-row {
+          background-color: #ffffff;
+        }
+      `}</style>
+    </Layout>
   );
 }
