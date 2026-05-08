@@ -1,19 +1,17 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import {
   Button,
   Input,
   Table,
   Modal,
-  Card,
   Space,
   message,
   Form,
-  Empty,
   Popconfirm,
-  Tag,
-  Layout,
+  ConfigProvider,
+  theme,
 } from "antd";
 import {
   PlusOutlined,
@@ -22,316 +20,480 @@ import {
   SaveOutlined,
   PhoneOutlined,
   UserOutlined,
+  SearchOutlined,
+  TeamOutlined,
+  CalendarOutlined,
+  ReloadOutlined,
 } from "@ant-design/icons";
 import type { ColumnsType } from "antd/es/table";
 import { useMediaQuery } from "react-responsive";
+import { useClientStore } from "@/lib/clientStore";
+import type { Client } from "@/lib/types";
 
-interface Client {
-  id: number;
-  name: string;
-  phone: string;
+// ─── Debounce hook ────────────────────────────────────────────────────────────
+function useDebounce(value: string, delay: number) {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const t = setTimeout(() => setDebounced(value), delay);
+    return () => clearTimeout(t);
+  }, [value, delay]);
+  return debounced;
 }
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+const getInitials = (name: string) =>
+  name
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((w) => w[0]?.toUpperCase() ?? "")
+    .join("");
+
+const formatDate = (iso: string) => {
+  const d = new Date(iso);
+  return d.toLocaleDateString("ru-RU", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+};
+
+const validateName = (value: string): string | null => {
+  if (!value.trim()) return "Заполни имя!";
+  if (!/^[a-яёА-ЯЁa-zA-Z\s\-]+$/.test(value))
+    return "Имя может содержать только буквы, пробелы и дефисы!";
+  return null;
+};
+
+const validatePhone = (value: string): string | null => {
+  if (!value.trim()) return "Заполни телефон!";
+  if (!/^[\d\+\-\s()]+$/.test(value))
+    return "Телефон должен содержать только цифры и символы: +, -, ( ), пробелы!";
+  return null;
+};
+
+// ─── Main component ───────────────────────────────────────────────────────────
 export default function Home() {
-  const [clients, setClients] = useState<Client[]>([]);
-  const [name, setName] = useState("");
-  const [phone, setPhone] = useState("");
-  const [editingId, setEditingId] = useState<number | null>(null);
-  const [isModalVisible, setIsModalVisible] = useState(false);
+  const {
+    isLoading,
+    isModalOpen,
+    editingClient,
+    searchQuery,
+    currentPage,
+    pageSize,
+    addClient,
+    updateClient,
+    deleteClient,
+    setSearch,
+    setPage,
+    openAddModal,
+    openEditModal,
+    closeModal,
+    getPaginatedClients,
+    getTotalFiltered,
+    getStats,
+  } = useClientStore();
 
+  const [localSearch, setLocalSearch] = useState(searchQuery);
+  const debouncedSearch = useDebounce(localSearch, 300);
+
+  const [form] = Form.useForm<{ name: string; phone: string }>();
+  const [messageApi, contextHolder] = message.useMessage();
   const isMobile = useMediaQuery({ maxWidth: 768 });
+  const isHydrated = useRef(false);
+  const [mounted, setMounted] = useState(false);
 
-  const validateName = (value: string): boolean => {
-    if (!value.trim()) {
-      message.error("Заполни имя!");
-      return false;
+  // wait for zustand persist hydration
+  useEffect(() => {
+    setMounted(true);
+    isHydrated.current = true;
+  }, []);
+
+  // sync debounced search → store
+  useEffect(() => {
+    setSearch(debouncedSearch);
+  }, [debouncedSearch, setSearch]);
+
+  // populate form when editing
+  useEffect(() => {
+    if (isModalOpen && editingClient) {
+      form.setFieldsValue({
+        name: editingClient.name,
+        phone: editingClient.phone,
+      });
+    } else if (isModalOpen && !editingClient) {
+      form.resetFields();
     }
-    if (!/^[a-яёА-ЯЁa-zA-Z\s\-]+$/.test(value)) {
-      message.error("Имя может содержать только буквы, пробелы и дефисы!");
-      return false;
+  }, [isModalOpen, editingClient, form]);
+
+  const handleSubmit = useCallback(async () => {
+    try {
+      const values = await form.validateFields();
+      const nameErr = validateName(values.name);
+      const phoneErr = validatePhone(values.phone);
+      if (nameErr) { messageApi.error(nameErr); return; }
+      if (phoneErr) { messageApi.error(phoneErr); return; }
+
+      if (editingClient) {
+        await updateClient(editingClient.id, values.name, values.phone);
+        messageApi.success("Клиент обновлён!");
+      } else {
+        await addClient(values.name, values.phone);
+        messageApi.success("Клиент добавлен!");
+      }
+    } catch {
+      // form validation failed — antd shows inline errors
     }
-    return true;
-  };
+  }, [form, editingClient, updateClient, addClient, messageApi]);
 
-  const validatePhone = (value: string): boolean => {
-    if (!value.trim()) {
-      message.error("Заполни телефон!");
-      return false;
-    }
-    if (!/^[\d\+\-\s()]+$/.test(value)) {
-      message.error(
-        "Телефон должен содержать только цифры и символы: +, -, ( ), пробелы!"
-      );
-      return false;
-    }
-    return true;
-  };
+  const handleDelete = useCallback(
+    async (id: string) => {
+      await deleteClient(id);
+      messageApi.success("Клиент удалён!");
+    },
+    [deleteClient, messageApi]
+  );
 
-  const addClient = () => {
-    if (!validateName(name) || !validatePhone(phone)) {
-      return;
-    }
+  const handleCancel = useCallback(() => {
+    form.resetFields();
+    closeModal();
+  }, [form, closeModal]);
 
-    if (editingId) {
-      setClients(
-        clients.map((client) =>
-          client.id === editingId ? { ...client, name, phone } : client
-        )
-      );
-      message.success("Клиент обновлён!");
-      setEditingId(null);
-    } else {
-      const newClient: Client = {
-        id: Date.now(),
-        name,
-        phone,
-      };
-      setClients([...clients, newClient]);
-      message.success("Клиент добавлен!");
-    }
+  const stats = mounted ? getStats() : { total: 0, todayCount: 0 };
+  const paginatedClients = mounted ? getPaginatedClients() : [];
+  const totalFiltered = mounted ? getTotalFiltered() : 0;
 
-    setName("");
-    setPhone("");
-    setIsModalVisible(false);
-  };
-
-  const editClient = (client: Client) => {
-    setName(client.name);
-    setPhone(client.phone);
-    setEditingId(client.id);
-    setIsModalVisible(true);
-  };
-
-  const deleteClient = (id: number) => {
-    setClients(clients.filter((client) => client.id !== id));
-    message.success("Клиент удалён!");
-  };
-
-  const cancelEdit = () => {
-    setName("");
-    setPhone("");
-    setEditingId(null);
-    setIsModalVisible(false);
-  };
-
-  // ДЕСКТОП ВЕРСИЯ
-  const desktopColumns: ColumnsType<Client & { index: number }> = [
+  // ── Columns ────────────────────────────────────────────────────────────────
+  const desktopColumns: ColumnsType<Client> = [
     {
       title: "№",
-      dataIndex: "index",
       key: "index",
-      width: "5%",
+      width: 56,
       align: "center",
-      render: (_, __, index) => <Tag color="blue">{index + 1}</Tag>,
+      render: (_, __, idx) => (
+        <span className="crm-date-text" style={{ fontWeight: 600 }}>
+          {(currentPage - 1) * pageSize + idx + 1}
+        </span>
+      ),
     },
     {
-      title: "Имя",
+      title: "Клиент",
       dataIndex: "name",
       key: "name",
-      width: "35%",
-      render: (text) => (
-        <Space>
-          <UserOutlined style={{ color: "#1890ff" }} />
-          <span style={{ fontSize: "16px", fontWeight: "500" }}>{text}</span>
-        </Space>
+      render: (text: string) => (
+        <div className="crm-name-badge">
+          <div className="crm-avatar">{getInitials(text)}</div>
+          <span className="crm-name-text">{text}</span>
+        </div>
       ),
     },
     {
       title: "Телефон",
       dataIndex: "phone",
       key: "phone",
-      width: "35%",
-      render: (text) => (
-        <Space>
-          <PhoneOutlined style={{ color: "#52c41a", fontSize: "18px" }} />
-          <span style={{ fontSize: "16px", fontWeight: "500" }}>{text}</span>
+      render: (text: string) => (
+        <Space size={8}>
+          <PhoneOutlined style={{ color: "var(--color-accent)", fontSize: 14 }} />
+          <span className="crm-phone-text">{text}</span>
         </Space>
+      ),
+    },
+    {
+      title: "Добавлен",
+      dataIndex: "createdAt",
+      key: "createdAt",
+      width: 140,
+      render: (val: string) => (
+        <span className="crm-date-text">{formatDate(val)}</span>
       ),
     },
     {
       title: "Действия",
       key: "actions",
-      width: "25%",
+      width: 160,
       render: (_, record) => (
-        <Space>
+        <Space size={8}>
           <Button
-            type="primary"
+            id={`edit-btn-${record.id}`}
             icon={<EditOutlined />}
-            size="middle"
-            onClick={() => editClient(record)}
-          >
-            Изменить
-          </Button>
+            size="small"
+            className="crm-action-btn"
+            onClick={() => openEditModal(record)}
+          />
           <Popconfirm
             title="Удалить клиента?"
-            description="Вы уверены что хотите удалить этого клиента?"
-            onConfirm={() => deleteClient(record.id)}
-            okText="Да"
+            description="Это действие нельзя отменить."
+            onConfirm={() => handleDelete(record.id)}
+            okText="Удалить"
             cancelText="Отмена"
+            okButtonProps={{ danger: true }}
           >
-            <Button type="primary" danger icon={<DeleteOutlined />} size="middle">
-              Удалить
-            </Button>
+            <Button
+              id={`delete-btn-${record.id}`}
+              icon={<DeleteOutlined />}
+              size="small"
+              className="crm-action-btn crm-action-btn-danger"
+            />
           </Popconfirm>
         </Space>
       ),
     },
   ];
 
-  // МОБИЛЬНАЯ ВЕРСИЯ
-  const mobileColumns: ColumnsType<Client & { index: number }> = [
+  const mobileColumns: ColumnsType<Client> = [
     {
-      title: "Имя",
-      dataIndex: "name",
-      key: "name",
-      render: (text, record) => (
+      title: "Клиент",
+      key: "client",
+      render: (_, record) => (
         <div>
-          <div style={{ fontSize: "14px", fontWeight: "bold" }}>{text}</div>
-          <div style={{ fontSize: "12px", color: "#999" }}>{record.phone}</div>
+          <div className="crm-name-badge" style={{ marginBottom: 4 }}>
+            <div className="crm-avatar" style={{ width: 28, height: 28, fontSize: 11 }}>
+              {getInitials(record.name)}
+            </div>
+            <span className="crm-name-text" style={{ fontSize: 13 }}>
+              {record.name}
+            </span>
+          </div>
+          <span className="crm-phone-text" style={{ fontSize: 12, paddingLeft: 38 }}>
+            {record.phone}
+          </span>
         </div>
       ),
     },
     {
-      title: "Действия",
+      title: "",
       key: "actions",
-      width: "30%",
+      width: 80,
       render: (_, record) => (
-        <Space direction="vertical" size="small">
+        <Space direction="vertical" size={4}>
           <Button
-            type="primary"
             icon={<EditOutlined />}
             size="small"
+            className="crm-action-btn"
             block
-            onClick={() => editClient(record)}
-          >
-            Изменить
-          </Button>
+            onClick={() => openEditModal(record)}
+          />
           <Popconfirm
             title="Удалить?"
-            onConfirm={() => deleteClient(record.id)}
+            onConfirm={() => handleDelete(record.id)}
             okText="Да"
-            cancelText="Отмена"
+            cancelText="Нет"
+            okButtonProps={{ danger: true }}
           >
-            <Button type="primary" danger icon={<DeleteOutlined />} size="small" block>
-              Удалить
-            </Button>
+            <Button
+              icon={<DeleteOutlined />}
+              size="small"
+              className="crm-action-btn crm-action-btn-danger"
+              block
+            />
           </Popconfirm>
         </Space>
       ),
     },
   ];
 
-  const dataWithIndex = clients.map((client, index) => ({
-    ...client,
-    index,
-  }));
-
+  // ── Render ─────────────────────────────────────────────────────────────────
   return (
-    <Layout style={{ minHeight: "100vh", background: "#f5f5f5" }}>
-      <Layout.Content style={{ padding: isMobile ? "16px" : "32px" }}>
-        <Card
-          title={
-            <div style={{ fontSize: isMobile ? "18px" : "24px", fontWeight: "bold" }}>
-              CRM Система
-            </div>
-          }
-          extra={
-            <Button
-              type="primary"
-              icon={<PlusOutlined />}
-              size={isMobile ? "middle" : "large"}
-              onClick={() => {
-                setEditingId(null);
-                setName("");
-                setPhone("");
-                setIsModalVisible(true);
-              }}
-            >
-              {isMobile ? "Добавить" : "Добавить клиента"}
-            </Button>
-          }
-          style={{
-            boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
-            borderRadius: "8px",
-          }}
-        >
-          {clients.length === 0 ? (
-            <Empty description="Нет клиентов" style={{ padding: "40px 0" }} />
-          ) : (
+    <ConfigProvider
+      theme={{
+        algorithm: theme.darkAlgorithm,
+        token: {
+          colorPrimary: "#6366f1",
+          colorBgBase: "#1a1d27",
+          colorBgContainer: "#1a1d27",
+          borderRadius: 12,
+          fontFamily: "Inter, -apple-system, sans-serif",
+        },
+      }}
+    >
+      {contextHolder}
+      <div className="crm-root">
+        {/* ── Header ── */}
+        <header className="crm-header" id="crm-header">
+          <div className="crm-header-brand">
+            <div className="crm-header-logo">👥</div>
             <div>
-              <div style={{ marginBottom: "16px", color: "#666" }}>
-                <strong>Всего клиентов: {clients.length}</strong>
-              </div>
-              <Table
-                columns={isMobile ? mobileColumns : desktopColumns}
-                dataSource={dataWithIndex}
-                rowKey="id"
-                pagination={false}
-                size={isMobile ? "small" : "large"}
-                scroll={isMobile ? { x: true } : undefined}
-                rowClassName={(_, index) =>
-                  index % 2 === 0 ? "even-row" : "odd-row"
-                }
-              />
+              <div className="crm-header-title">ClientCRM</div>
+              <div className="crm-header-subtitle">Управление клиентами</div>
             </div>
-          )}
-        </Card>
-      </Layout.Content>
+          </div>
+          <Button
+            id="add-client-btn"
+            type="primary"
+            icon={<PlusOutlined />}
+            className="btn-primary"
+            size={isMobile ? "middle" : "large"}
+            onClick={openAddModal}
+          >
+            {isMobile ? "Добавить" : "Добавить клиента"}
+          </Button>
+        </header>
 
-      {/* МОДАЛ ДЛЯ ДОБАВЛЕНИЯ/РЕДАКТИРОВАНИЯ */}
+        {/* ── Content ── */}
+        <main className="crm-content" id="crm-main">
+          {/* ── Stats ── */}
+          <div className="crm-stats" id="crm-stats">
+            <div className="crm-stat-card">
+              <div className="crm-stat-icon crm-stat-icon--primary">
+                <TeamOutlined />
+              </div>
+              <div>
+                <div className="crm-stat-value">{stats.total}</div>
+                <div className="crm-stat-label">Всего клиентов</div>
+              </div>
+            </div>
+            <div className="crm-stat-card">
+              <div className="crm-stat-icon crm-stat-icon--accent">
+                <CalendarOutlined />
+              </div>
+              <div>
+                <div className="crm-stat-value">{stats.todayCount}</div>
+                <div className="crm-stat-label">Добавлено сегодня</div>
+              </div>
+            </div>
+            <div className="crm-stat-card">
+              <div className="crm-stat-icon crm-stat-icon--success">
+                <SearchOutlined />
+              </div>
+              <div>
+                <div className="crm-stat-value">{totalFiltered}</div>
+                <div className="crm-stat-label">Найдено</div>
+              </div>
+            </div>
+          </div>
+
+          {/* ── Table card ── */}
+          <div className="crm-card" id="crm-table-card">
+            <div className="crm-card-header">
+              <div>
+                <div className="crm-card-title">База клиентов</div>
+                <div className="crm-card-meta">
+                  {totalFiltered} из {stats.total} записей
+                </div>
+              </div>
+              <div className="crm-toolbar">
+                <Input
+                  id="search-input"
+                  placeholder="Поиск по имени или телефону…"
+                  prefix={<SearchOutlined />}
+                  value={localSearch}
+                  onChange={(e) => setLocalSearch(e.target.value)}
+                  allowClear
+                  style={{ width: isMobile ? "100%" : 280 }}
+                  size="middle"
+                />
+                {localSearch && (
+                  <Button
+                    icon={<ReloadOutlined />}
+                    size="middle"
+                    className="crm-action-btn"
+                    onClick={() => {
+                      setLocalSearch("");
+                      setSearch("");
+                    }}
+                  >
+                    Сбросить
+                  </Button>
+                )}
+              </div>
+            </div>
+
+            {!mounted || stats.total === 0 ? (
+              <div className="crm-empty">
+                <div className="crm-empty-icon">👤</div>
+                <div className="crm-empty-title">Клиентов пока нет</div>
+                <div className="crm-empty-desc">
+                  Нажмите «Добавить клиента», чтобы начать
+                </div>
+              </div>
+            ) : totalFiltered === 0 ? (
+              <div className="crm-empty">
+                <div className="crm-empty-icon">🔍</div>
+                <div className="crm-empty-title">Ничего не найдено</div>
+                <div className="crm-empty-desc">
+                  Попробуйте изменить поисковый запрос
+                </div>
+              </div>
+            ) : (
+              <Table<Client>
+                id="clients-table"
+                columns={isMobile ? mobileColumns : desktopColumns}
+                dataSource={paginatedClients}
+                rowKey="id"
+                loading={isLoading}
+                size={isMobile ? "small" : "middle"}
+                scroll={isMobile ? { x: true } : undefined}
+                rowClassName={() => "crm-row-enter"}
+                pagination={{
+                  current: currentPage,
+                  pageSize,
+                  total: totalFiltered,
+                  onChange: setPage,
+                  showSizeChanger: false,
+                  showTotal: (total, range) =>
+                    `${range[0]}–${range[1]} из ${total}`,
+                }}
+              />
+            )}
+          </div>
+        </main>
+      </div>
+
+      {/* ── Modal ── */}
       <Modal
-        title={editingId ? "Редактировать клиента" : "Добавить клиента"}
-        open={isModalVisible}
-        onCancel={cancelEdit}
-        width={isMobile ? "95%" : 500}
+        id="client-modal"
+        title={editingClient ? "Редактировать клиента" : "Добавить клиента"}
+        open={isModalOpen}
+        onCancel={handleCancel}
+        width={isMobile ? "95%" : 480}
+        confirmLoading={isLoading}
         footer={[
-          <Button key="cancel" size="large" onClick={cancelEdit}>
+          <Button key="cancel" size="large" onClick={handleCancel}>
             Отмена
           </Button>,
           <Button
             key="submit"
+            id="modal-submit-btn"
             type="primary"
             size="large"
-            onClick={addClient}
-            icon={editingId ? <SaveOutlined /> : <PlusOutlined />}
+            loading={isLoading}
+            onClick={handleSubmit}
+            icon={editingClient ? <SaveOutlined /> : <PlusOutlined />}
+            className="btn-primary"
           >
-            {editingId ? "Сохранить" : "Добавить"}
+            {editingClient ? "Сохранить" : "Добавить"}
           </Button>,
         ]}
       >
-        <Form layout="vertical" style={{ marginTop: "20px" }}>
-          <Form.Item label="Имя" required>
+        <Form form={form} layout="vertical" style={{ marginTop: 20 }}>
+          <Form.Item
+            label="Имя"
+            name="name"
+            rules={[{ required: true, message: "Введите имя" }]}
+          >
             <Input
-              placeholder="Введите имя"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              onKeyPress={(e) => e.key === "Enter" && addClient()}
-              size="large"
+              id="input-name"
+              placeholder="Введите имя клиента"
               prefix={<UserOutlined />}
+              size="large"
+              onPressEnter={handleSubmit}
             />
           </Form.Item>
-
-          <Form.Item label="Телефон" required>
+          <Form.Item
+            label="Телефон"
+            name="phone"
+            rules={[{ required: true, message: "Введите телефон" }]}
+          >
             <Input
-              placeholder="Введите телефон"
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              onKeyPress={(e) => e.key === "Enter" && addClient()}
-              size="large"
+              id="input-phone"
+              placeholder="+7 (999) 000-00-00"
               prefix={<PhoneOutlined />}
+              size="large"
+              onPressEnter={handleSubmit}
             />
           </Form.Item>
         </Form>
       </Modal>
-
-      <style>{`
-        .even-row {
-          background-color: #fafafa;
-        }
-        .odd-row {
-          background-color: #ffffff;
-        }
-      `}</style>
-    </Layout>
+    </ConfigProvider>
   );
 }
