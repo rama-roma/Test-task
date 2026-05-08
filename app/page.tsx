@@ -43,6 +43,9 @@ import {
 } from "@ant-design/icons";
 import { Select, Badge, Dropdown, Menu } from "antd";
 import type { Client, ClientStatus } from "@/lib/types";
+import { useClientStore } from "@/lib/clientStore";
+import { useMediaQuery } from "react-responsive";
+import type { ColumnsType } from "antd/es/table";
 
 // ─── Debounce hook ────────────────────────────────────────────────────────────
 function useDebounce(value: string, delay: number) {
@@ -113,6 +116,11 @@ export default function Home() {
     getTotalFiltered,
     getStats,
     clients,
+    searchQuery,
+    currentPage,
+    pageSize,
+    addClient,
+    updateClient,
   } = useClientStore();
 
   const [localSearch, setLocalSearch] = useState(searchQuery);
@@ -517,7 +525,7 @@ export default function Home() {
               <TeamOutlined style={{ color: "#fff" }} />
             </div>
             <div>
-              <h1 className="crm-header-title">CRM.JACKIE</h1>
+              <h1 className="crm-header-title">CRM</h1>
               <p className="crm-header-subtitle">Управление клиентами</p>
             </div>
           </div>
@@ -617,7 +625,7 @@ export default function Home() {
                 <div className="crm-search-wrap">
                   <Input
                     id="search-input"
-                    placeholder="Поиск..."
+                    placeholder="     Поиск..."
                     prefix={<SearchOutlined />}
                     value={localSearch}
                     onChange={(e) => setLocalSearch(e.target.value)}
@@ -694,6 +702,7 @@ export default function Home() {
               Отмена
             </Button>,
             <Button
+              key="submit"
               id="modal-submit-btn"
               type="primary"
               size="large"
@@ -824,6 +833,7 @@ export default function Home() {
             </div>
         </Form>
       </Modal>
+      </div>
     </ConfigProvider>
   );
 }
