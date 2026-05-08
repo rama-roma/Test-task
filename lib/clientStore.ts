@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import type { Client } from "./types";
+import type { Client, ClientStatus } from "./types";
 
 interface ClientStore {
   // Data
@@ -11,15 +11,17 @@ interface ClientStore {
   currentPage: number;
   pageSize: number;
   isLoading: boolean;
+  themeMode: "light" | "dark";
 
   // Modal state
   isModalOpen: boolean;
   editingClient: Client | null;
 
   // Async actions
-  addClient: (name: string, phone: string) => Promise<void>;
-  updateClient: (id: string, name: string, phone: string) => Promise<void>;
+  addClient: (name: string, phone: string, email: string, status: ClientStatus, avatarUrl?: string) => Promise<void>;
+  updateClient: (id: string, name: string, phone: string, email: string, status: ClientStatus, avatarUrl?: string) => Promise<void>;
   deleteClient: (id: string) => Promise<void>;
+  bulkDeleteClients: (ids: string[]) => Promise<void>;
 
   // Sync actions
   setSearch: (query: string) => void;
@@ -27,6 +29,7 @@ interface ClientStore {
   openAddModal: () => void;
   openEditModal: (client: Client) => void;
   closeModal: () => void;
+  toggleTheme: () => void;
 
   // Computed (helper)
   getFilteredClients: () => Client[];
@@ -45,15 +48,19 @@ export const useClientStore = create<ClientStore>()(
       isLoading: false,
       isModalOpen: false,
       editingClient: null,
+      themeMode: "dark",
 
       // ─── Async actions (simulate async with small delay) ──────────────────
-      addClient: async (name, phone) => {
+      addClient: async (name, phone, email, status, avatarUrl) => {
         set({ isLoading: true });
-        await new Promise((r) => setTimeout(r, 300)); // simulate network
+        await new Promise((r) => setTimeout(r, 300));
         const newClient: Client = {
           id: crypto.randomUUID(),
           name: name.trim(),
           phone: phone.trim(),
+          email: email.trim().toLowerCase(),
+          status,
+          avatarUrl,
           createdAt: new Date().toISOString(),
         };
         set((state) => ({
@@ -64,12 +71,21 @@ export const useClientStore = create<ClientStore>()(
         }));
       },
 
-      updateClient: async (id, name, phone) => {
+      updateClient: async (id, name, phone, email, status, avatarUrl) => {
         set({ isLoading: true });
         await new Promise((r) => setTimeout(r, 300));
         set((state) => ({
           clients: state.clients.map((c) =>
-            c.id === id ? { ...c, name: name.trim(), phone: phone.trim() } : c
+            c.id === id
+              ? {
+                  ...c,
+                  name: name.trim(),
+                  phone: phone.trim(),
+                  email: email.trim().toLowerCase(),
+                  status,
+                  avatarUrl,
+                }
+              : c
           ),
           isLoading: false,
           isModalOpen: false,
@@ -79,12 +95,19 @@ export const useClientStore = create<ClientStore>()(
 
       deleteClient: async (id) => {
         set({ isLoading: true });
-        await new Promise((r) => setTimeout(r, 200));
+        await new Promise((r) => setTimeout(r, 100));
         set((state) => ({
           clients: state.clients.filter((c) => c.id !== id),
           isLoading: false,
-          // reset to page 1 if current page becomes empty
-          currentPage: 1,
+        }));
+      },
+
+      bulkDeleteClients: async (ids) => {
+        set({ isLoading: true });
+        await new Promise((r) => setTimeout(r, 300));
+        set((state) => ({
+          clients: state.clients.filter((c) => !ids.includes(c.id)),
+          isLoading: false,
         }));
       },
 
@@ -98,8 +121,12 @@ export const useClientStore = create<ClientStore>()(
       openEditModal: (client) =>
         set({ isModalOpen: true, editingClient: client }),
 
-      closeModal: () =>
-        set({ isModalOpen: false, editingClient: null }),
+      closeModal: () => set({ isModalOpen: false, editingClient: null }),
+
+      toggleTheme: () =>
+        set((state) => ({
+          themeMode: state.themeMode === "light" ? "dark" : "light",
+        })),
 
       // ─── Computed helpers ────────────────────────────────────────────────
       getFilteredClients: () => {
@@ -109,7 +136,8 @@ export const useClientStore = create<ClientStore>()(
         return clients.filter(
           (c) =>
             c.name.toLowerCase().includes(q) ||
-            c.phone.toLowerCase().includes(q)
+            c.phone.toLowerCase().includes(q) ||
+            c.email.toLowerCase().includes(q)
         );
       },
 
