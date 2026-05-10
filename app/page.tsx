@@ -173,6 +173,13 @@ export default function Home() {
     setSearch(debouncedSearch);
   }, [debouncedSearch, setSearch]);
 
+  // sync theme to body for portals (modals, popovers)
+  useEffect(() => {
+    if (mounted) {
+      document.body.className = `${themeMode}-theme`;
+    }
+  }, [mounted, themeMode]);
+
   // populate form when editing
   useEffect(() => {
     if (isModalOpen && editingClient) {
@@ -625,8 +632,8 @@ export default function Home() {
                 <div className="crm-search-wrap">
                   <Input
                     id="search-input"
-                    placeholder="     Поиск..."
-                    prefix={<SearchOutlined />}
+                    placeholder="Поиск..."
+                    prefix={<SearchOutlined style={{ marginRight: 8 }} />}
                     value={localSearch}
                     onChange={(e) => setLocalSearch(e.target.value)}
                     allowClear
