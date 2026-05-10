@@ -693,7 +693,6 @@ export default function Home() {
 
         {/* ── Client Modal ── */}
         <Modal
-          id="client-modal"
           title={editingClient ? "Редактировать клиента" : "Новый контакт"}
           open={isModalOpen}
           onCancel={handleCancel}
